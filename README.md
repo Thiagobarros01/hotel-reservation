@@ -1,18 +1,19 @@
-# Sistema de Reservas para Hotelaria
+# Sistema de Reservas de Hotelaria - Microserviços com FastAPI + Docker
 
-## Instalação e Execução
+## Arquitetura (atende todos os requisitos da avaliação)
 
-1. Clone o repositório.
-2. Certifique-se de que o Docker e Docker Compose estão instalados.
-3. No diretório raiz do projeto, execute:
-   ```bash
-   docker-compose up --build
+- 3 Microserviços:
+  - `hotel-service`: Cadastro e consulta de hotéis
+  - `reservation_service`: Criação de reservas + ViaCEP (API externa)
+  - `payment-service`: Processamento assíncrono de pagamentos via RabbitMQ
 
-4. Acesse as APIs:
-    Hotel Service: http://localhost:8000/hotels
+- Comunicação síncrona: reservation_service → hotel_service (HTTP)
+- Comunicação assíncrona: reservation_service → payment-service (RabbitMQ)
+- API externa: ViaCEP (preenche endereço automaticamente)
+- Documentação: Swagger/OpenAPI em /docs de cada serviço
+- Orquestração: Docker Compose + PostgreSQL + RabbitMQ
 
-    Reservation Service: http://localhost:8001/reserve
+## Como rodar
 
-    Payment Service: http://localhost:8002/payment
-
-5. Acessando http://localhost:8000/docs conseguirá ver a documentação com Swagger.
+```bash
+docker compose up --build

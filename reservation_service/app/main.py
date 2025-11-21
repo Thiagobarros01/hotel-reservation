@@ -1,28 +1,33 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 from typing import List
 from datetime import date
+import httpx
+import pika
+import json
+import os
 
-# Importando as classes locais
 from models import Reserva, Base
 from database import SessionLocal, engine
 
-# Cria as tabelas no banco
 Base.metadata.create_all(bind=engine)
+app = FastAPI(title="Reservation Service - Hotelaria")
 
-app = FastAPI()
+# --- Schemas ---
+class EnderecoResponse(BaseModel):
+    logradouro: str
+    bairro: str
+    localidade: str
+    uf: str
 
-# --- Schemas Pydantic (Validação) ---
-
-# Modelo para criar reserva (Entrada)
 class ReservaRequest(BaseModel):
     id_hotel: int
     nome_usuario: str
+    cep: str  # Novo campo para ViaCEP
     data_checkin: date
     data_checkout: date
 
-# Modelo de resposta (Saída)
 class ReservaResponse(BaseModel):
     id: int
     id_hotel: int
@@ -30,15 +35,9 @@ class ReservaResponse(BaseModel):
     data_checkin: date
     data_checkout: date
 
-    # Permite conversão direta do SQLAlchemy
     model_config = ConfigDict(from_attributes=True)
 
-# Modelo para lista
-class ListaReservas(BaseModel):
-    reservas: List[ReservaResponse]
-
-# --- Dependência ---
-
+# --- DB ---
 def obter_db():
     db = SessionLocal()
     try:
@@ -46,23 +45,53 @@ def obter_db():
     finally:
         db.close()
 
-# --- Rotas ---
+# --- ViaCEP (API externa) ---
+@app.get("/cep/{cep}", response_model=EnderecoResponse)
+async def buscar_cep(cep: str):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"https://viacep.com.br/ws/{cep}/json/")
+        if response.status_code != 200 or "erro" in response.json():
+            raise HTTPException(404, "CEP não encontrado")
+        data = response.json()
+        return EnderecoResponse(
+            logradouro=data["logradouro"],
+            bairro=data["bairro"],
+            localidade=data["localidade"],
+            uf=data["uf"]
+        )
 
+# --- Criar reserva com tudo integrado ---
 @app.post("/reservas", response_model=ReservaResponse)
 def criar_reserva(reserva: ReservaRequest, db: Session = Depends(obter_db)):
-    nova_reserva = Reserva(
-        id_hotel=reserva.id_hotel,
-        nome_usuario=reserva.nome_usuario,
-        data_checkin=reserva.data_checkin,
-        data_checkout=reserva.data_checkout
-    )
-    
+    # 1. Comunicação SÍNCRONA: verifica se hotel existe
+    response = httpx.get(f"http://hotel-service:8000/hoteis")
+    hoteis = response.json()["hoteis"]
+    if not any(h["id"] == reserva.id_hotel for h in hoteis):
+        raise HTTPException(404, "Hotel não encontrado")
+
+    # 2. Salva a reserva
+    nova_reserva = Reserva(**reserva.dict(exclude={"cep"}))
     db.add(nova_reserva)
     db.commit()
     db.refresh(nova_reserva)
-    return nova_reserva
 
-@app.get("/reservas", response_model=ListaReservas)
-def listar_reservas(db: Session = Depends(obter_db)):
-    lista = db.query(Reserva).all()
-    return {"reservas": lista}
+    # 3. Comunicação ASSÍNCRONA: manda pro payment-service via RabbitMQ
+    mensagem = {
+        "id_reserva": nova_reserva.id,
+        "valor": 350.00,  # valor fixo só pra demo
+        "nome_usuario": reserva.nome_usuario
+    }
+    
+    rabbit_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+    connection = pika.BlockingConnection(pika.URLParameters(rabbit_url))
+    channel = connection.channel()
+    channel.queue_declare(queue='pagamentos_queue', durable=True)
+    channel.basic_publish(
+        exchange='',
+        routing_key='pagamentos_queue',
+        body=json.dumps(mensagem),
+        properties=pika.BasicProperties(delivery_mode=2)  # persistente
+    )
+    connection.close()
+
+    return nova_reserva

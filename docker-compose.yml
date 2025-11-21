@@ -5,13 +5,11 @@ services:
       - "8000:8000"
     networks:
       - hotelnet
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/hotelariadb
     depends_on:
       postgres:
         condition: service_healthy
-  
-       
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/hotelariadb
 
   reservation_service:
     build: ./reservation_service
@@ -19,11 +17,16 @@ services:
       - "8001:8001"
     networks:
       - hotelnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      hotel-service:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/hotelariadb
-    depends_on:
-       postgres:
-          condition: service_healthy
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
 
   payment-service:
     build: ./payment_service
@@ -31,32 +34,44 @@ services:
       - "8002:8002"
     networks:
       - hotelnet
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/hotelariadb
     depends_on:
+      rabbitmq:
+        condition: service_started
       postgres:
         condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/hotelariadb
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
 
   postgres:
-    image: postgres:17.4
-    container_name: postgres
-    restart: always
+    image: postgres:15-alpine   # versão leve e estável
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: hotelariadb
     ports:
-      - "5555:5432"  # Externo:5555, Interno:5432
+      - "5555:5432"
     volumes:
-      - ./data-db:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - hotelnet
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # painel web: http://localhost:15672 (user: guest, pass: guest)
+    networks:
+      - hotelnet
 
 networks:
   hotelnet:
     driver: bridge
+
+volumes:
+  postgres_data:
