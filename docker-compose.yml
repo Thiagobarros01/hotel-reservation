@@ -1,0 +1,62 @@
+services:
+  hotel-service:
+    build: ./hotel_service
+    ports:
+      - "8000:8000"
+    networks:
+      - hotelnet
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/hotelariadb
+    depends_on:
+      postgres:
+        condition: service_healthy
+  
+       
+
+  reservation_service:
+    build: ./reservation_service
+    ports:
+      - "8001:8001"
+    networks:
+      - hotelnet
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/hotelariadb
+    depends_on:
+       postgres:
+          condition: service_healthy
+
+  payment-service:
+    build: ./payment_service
+    ports:
+      - "8002:8002"
+    networks:
+      - hotelnet
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/hotelariadb
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17.4
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hotelariadb
+    ports:
+      - "5555:5432"  # Externo:5555, Interno:5432
+    volumes:
+      - ./data-db:/var/lib/postgresql/data
+    networks:
+      - hotelnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  hotelnet:
+    driver: bridge
