@@ -68,6 +68,15 @@ services:
       - "15672:15672"   # painel web: http://localhost:15672 (user: guest, pass: guest)
     networks:
       - hotelnet
+    
+  notification-service:
+    build: ./notification_service
+    ports:
+      - "8003:8003"
+    networks:
+      - hotelnet
+    depends_on:
+      - rabbitmq
 
 networks:
   hotelnet:

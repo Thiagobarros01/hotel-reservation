@@ -9,5 +9,7 @@ class Reserva(Base):
     id = Column(Integer, primary_key=True, index=True)
     id_hotel = Column(Integer)
     nome_usuario = Column(String)
+    email_usuario = Column(String)
+    cep = Column(String)
     data_checkin = Column(Date)
     data_checkout = Column(Date)

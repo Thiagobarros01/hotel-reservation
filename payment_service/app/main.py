@@ -1,36 +1,53 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
+from typing import List
+from pydantic import BaseModel
 import pika
 import json
 import threading
 import time
 import os
+
 from models import Pagamento, Base
 from database import SessionLocal, engine
 
-app = FastAPI(title="Payment Service - Hotelaria")
+app = FastAPI(title="Payment Service")
 
-# NÃO cria tabelas aqui no import! Vamos criar só quando a app iniciar
-@app.on_event("startup")
-def startup_event():
-    # Agora sim, cria as tabelas quando a aplicação já está rodando
-    Base.metadata.create_all(bind=engine)
-    print("Tabelas criadas/verificados no banco de pagamentos")
-    
-    # Inicia o consumidor em background
-    threading.Thread(target=iniciar_consumidor, daemon=True).start()
+# Schemas
+class PagamentoResponse(BaseModel):
+    id: int
+    id_reserva: int
+    valor: float
+    status: str
 
-def obter_db():
+    class Config:
+        from_attributes = True
+
+# Database
+def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-@app.get("/")
-def home():
-    return {"status": "Payment Service rodando e consumindo fila pagamentos_queue..."}
+# Startup
+@app.on_event("startup")
+def startup_event():
+    Base.metadata.create_all(bind=engine)
+    print("Tabelas de pagamento criadas/verificadas")
+    threading.Thread(target=iniciar_consumidor, daemon=True).start()
 
+# Routes
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "service": "payment-service"}
+
+@app.get("/pagamentos", response_model=List[PagamentoResponse])
+def listar_pagamentos(db: Session = Depends(get_db)):
+    return db.query(Pagamento).all()
+
+# RabbitMQ Consumer
 def conectar_rabbitmq():
     rabbit_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
     while True:
@@ -50,7 +67,10 @@ def iniciar_consumidor():
     def callback(ch, method, properties, body):
         try:
             dados = json.loads(body)
-            print(f"\nPAGAMENTO RECEBIDO → Reserva: {dados['id_reserva']} | Cliente: {dados['nome_usuario']} | R$ {dados.get('valor', 350.00)}")
+            print(f"📩 MENSAGEM RECEBIDA - Reserva: {dados['id_reserva']}")
+
+            print("⏳ Processando pagamento (aguarde 10 segundos)...")
+            time.sleep(5)
 
             db = SessionLocal()
             pagamento = Pagamento(
@@ -63,12 +83,12 @@ def iniciar_consumidor():
             db.close()
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
-            print("Pagamento salvo no banco com sucesso!\n")
+            print("✓ Pagamento processado com sucesso")
         except Exception as e:
             print(f"Erro ao processar pagamento: {e}")
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue='pagamentos_queue', on_message_callback=callback)
-    print("Consumidor ativo! Aguardando mensagens na fila pagamentos_queue...")
+    print("Consumidor ativo! Aguardando mensagens...")
     channel.start_consuming()

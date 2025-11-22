@@ -7,6 +7,6 @@ class Pagamento(Base):
     __tablename__ = "pagamentos"
 
     id = Column(Integer, primary_key=True, index=True)
-    id_reserva = Column(Integer) # Referência à reserva
+    id_reserva = Column(Integer)
     valor = Column(Float)
-    status = Column(String) # Ex: "Aprovado", "Pendente"
+    status = Column(String)

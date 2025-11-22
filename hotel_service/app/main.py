@@ -1,66 +1,71 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from pydantic import BaseModel, ConfigDict
-import requests
+from pydantic import BaseModel
+import httpx
 
-# Importando as classes locais
 from models import Hotel, Base
 from database import SessionLocal, engine
 
-# Cria as tabelas se não existirem
 Base.metadata.create_all(bind=engine)
+app = FastAPI(title="Hotel Service")
 
-app = FastAPI()
-
-# --- Classes Pydantic (Schemas) ---
-
-# Modelo para receber dados do usuário
+# Schemas
 class HotelRequest(BaseModel):
     nome: str
     localizacao: str
     salas_disponiveis: int
 
-# Modelo para devolver dados (inclui o ID)
 class HotelResponse(BaseModel):
     id: int
     nome: str
     localizacao: str
     salas_disponiveis: int
 
-    # Configuração para compatibilidade com SQLAlchemy
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True
 
-# Modelo para listagem
-class ListaHoteis(BaseModel):
-    hoteis: List[HotelResponse]
+class EnderecoResponse(BaseModel):
+    logradouro: str
+    bairro: str
+    localidade: str
+    uf: str
 
-# --- Dependências ---
-
-def obter_db():
+# Database
+def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# --- Rotas da API ---
+# Routes
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "service": "hotel-service"}
 
 @app.post("/hoteis", response_model=HotelResponse)
-def criar_hotel(hotel: HotelRequest, db: Session = Depends(obter_db)):
-    # Criando objeto do banco com os dados recebidos
-    novo_hotel = Hotel(
-        nome=hotel.nome,
-        localizacao=hotel.localizacao,
-        salas_disponiveis=hotel.salas_disponiveis
-    )
-    
+def criar_hotel(hotel: HotelRequest, db: Session = Depends(get_db)):
+    novo_hotel = Hotel(**hotel.dict())
     db.add(novo_hotel)
     db.commit()
     db.refresh(novo_hotel)
     return novo_hotel
 
-@app.get("/hoteis", response_model=ListaHoteis)
-def listar_hoteis(db: Session = Depends(obter_db)):
-    lista = db.query(Hotel).all()
-    return {"hoteis": lista}
+@app.get("/hoteis", response_model=List[HotelResponse])
+def listar_hoteis(db: Session = Depends(get_db)):
+    return db.query(Hotel).all()
+
+@app.get("/cep/{cep}", response_model=EnderecoResponse)
+async def buscar_cep(cep: str):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"https://viacep.com.br/ws/{cep}/json/")
+        if response.status_code != 200 or "erro" in response.json():
+            raise HTTPException(404, "CEP não encontrado")
+        data = response.json()
+        return EnderecoResponse(
+            logradouro=data["logradouro"],
+            bairro=data["bairro"],
+            localidade=data["localidade"],
+            uf=data["uf"]
+        )
