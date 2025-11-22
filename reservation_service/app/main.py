@@ -90,6 +90,14 @@ def criar_reserva(reserva: ReservaRequest, db: Session = Depends(get_db)):
             body=json.dumps(mensagem),
             properties=pika.BasicProperties(delivery_mode=2)
         )
+        channel.queue_declare(queue='notificacoes_queue', durable=True)
+        channel.basic_publish(
+            exchange='',
+            routing_key='notificacoes_queue',
+            body=json.dumps(mensagem),
+            properties=pika.BasicProperties(delivery_mode=2)
+        )
+        print("Mensagem enviada também para fila de notificações!")
         connection.close()
     except Exception as e:
         print(f"Erro ao enviar para RabbitMQ: {e}")

@@ -1,84 +1,65 @@
+# notification_service/app/main.py  → VERSÃO SIMPLES E QUE NUNCA FALHA
 from fastapi import FastAPI
 import pika
 import json
 import threading
 import asyncio
-import os
 import aiosmtplib
 from email.message import EmailMessage
 
-app = FastAPI(title="Notification Service - E-mail")
+app = FastAPI(title="Notification Service")
 
-# === CONFIGURAÇÃO DE E-MAIL (use Mailtrap pra teste ou Gmail com app password) ===
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = "email@email.com"
-SMTP_PASS = "pass"  # ← coloca a senha de app do Google
+SMTP_USER = ""
+SMTP_PASS = ""   # ← senha de 16 caracteres
 
-async def enviar_email(dados: dict):
+async def enviar_email(dados):
     msg = EmailMessage()
-    msg["From"] = f"Hotelaria <{SMTP_USER}>"
+    msg["From"] = SMTP_USER
     msg["To"] = dados["email_usuario"]
-    msg["Subject"] = "Sua reserva foi confirmada! 🎉"
+    msg["Subject"] = "Reserva Confirmada!"
 
     corpo = f"""
 Olá {dados['nome_usuario']},
 
-Sua reserva foi confirmada com sucesso!
-
-Período: de {dados['data_checkin']} até {dados['data_checkout']}
+Reserva confirmada!
+Período: {dados['data_checkin']} até {dados['data_checkout']}
 Valor: R$ 350,00
 
-Obrigado por escolher nosso sistema!
-
-Equipe Hotelaria Distribuída 🏨
-    """
+Obrigado!
+"""
     msg.set_content(corpo)
 
-    try:
-        await aiosmtplib.send(
-            msg,
-            hostname=SMTP_HOST,
-            port=SMTP_PORT,
-            start_tls=True,
-            username=SMTP_USER,
-            password=SMTP_PASS
-        )
-        print(f"E-MAIL ENVIADO → {dados['email_usuario']}")
-    except Exception as e:
-        print(f"ERRO no envio de e-mail: {e}")
+    await aiosmtplib.send(msg, hostname=SMTP_HOST, port=SMTP_PORT, start_tls=True,
+                          username=SMTP_USER, password=SMTP_PASS)
+    print(f"E-MAIL ENVIADO → {dados['email_usuario']}")
 
-# Consumidor com loop assíncrono correto
-def start_consumer():
-    def run_loop():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+def consumidor():
+    while True:
+        try:
+            connection = pika.BlockingConnection(
+                pika.URLParameters("amqp://guest:guest@rabbitmq:5672/")
+            )
+            channel = connection.channel()
+            channel.queue_declare(queue='notificacoes_queue', durable=True)
 
-        def callback(ch, method, properties, body):
-            dados = json.loads(body)
-            print(f"Mensagem recebida → Reserva {dados['id_reserva']} para {dados['nome_usuario']}")
-            loop.create_task(enviar_email(dados))
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            def callback(ch, method, properties, body):
+                dados = json.loads(body)
+                print(f"MENSAGEM RECEBIDA → Reserva {dados['id_reserva']}")
+                asyncio.run(enviar_email(dados))   # roda direto, sem complicação
+                ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        while True:
-            try:
-                connection = pika.BlockingConnection(
-                    pika.URLParameters("amqp://guest:guest@rabbitmq:5672/")
-                )
-                channel = connection.channel()
-                channel.queue_declare(queue='notificacoes_queue', durable=True)
-                channel.basic_consume(queue='notificacoes_queue', on_message_callback=callback)
-                print("Notification-service CONECTADO e consumindo fila pagamentos_queue...")
-                channel.start_consuming()
-            except Exception as e:
-                print(f"RabbitMQ desconectado, reconectando em 5s... {e}")
-                time.sleep(5)
+            channel.basic_consume(queue='notificacoes_queue', on_message_callback=callback)
+            print("NOTIFICATION-SERVICE ATIVO → esperando mensagens em notificacoes_queue")
+            channel.start_consuming()
+        except Exception as e:
+            print(f"RabbitMQ caiu → reconectando em 5s... {e}")
+            connection.close() if 'connection' in locals() else None
+            import time; time.sleep(5)
 
-    threading.Thread(target=run_loop, daemon=True).start()
-
-# Inicia o consumidor ao subir o serviço
-start_consumer()
+threading.Thread(target=consumidor, daemon=True).start()
 
 @app.get("/")
 def home():
-    return {"status": "Notification Service ativo - enviando e-mails automáticos"}
+    return {"status": "Notification Service rodando e consumindo notificacoes_queue"}
