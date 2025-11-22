@@ -11,8 +11,8 @@ app = FastAPI(title="Notification Service")
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = ""
-SMTP_PASS = ""   # ← senha de 16 caracteres
+SMTP_USER = "hotelaria.reservas.service@gmail.com"
+SMTP_PASS = "umidqwgjxahkixre"   # ← senha de 16 caracteres
 
 async def enviar_email(dados):
     msg = EmailMessage()
@@ -25,7 +25,7 @@ Olá {dados['nome_usuario']},
 
 Reserva confirmada!
 Período: {dados['data_checkin']} até {dados['data_checkout']}
-Valor: R$ 350,00
+Valor: R$ {dados['valor_total_reserva']}
 
 Obrigado!
 """

@@ -6,30 +6,10 @@ import httpx
 
 from models import Hotel, Base
 from database import SessionLocal, engine
+from schemas import HotelRequest, HotelResponse, EnderecoResponse
 
-Base.metadata.create_all(bind=engine)
-app = FastAPI(title="Hotel Service")
-
-# Schemas
-class HotelRequest(BaseModel):
-    nome: str
-    localizacao: str
-    salas_disponiveis: int
-
-class HotelResponse(BaseModel):
-    id: int
-    nome: str
-    localizacao: str
-    salas_disponiveis: int
-
-    class Config:
-        from_attributes = True
-
-class EnderecoResponse(BaseModel):
-    logradouro: str
-    bairro: str
-    localidade: str
-    uf: str
+Base.metadata.create_all(bind=engine) # Cria as tabelas no banco de dados -> ddl-auto=create java
+app = FastAPI(title="Hotel Service") # @SpringBootApplication equivalent
 
 # Database
 def get_db():
@@ -43,10 +23,16 @@ def get_db():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "service": "hotel-service"}
-
-@app.post("/hoteis", response_model=HotelResponse)
+                     
+                     #ResponseEntity<HotelResponse>
+@app.post("/hoteis", response_model=HotelResponse)  #Autowired do Java -> HotelRepository repo
 def criar_hotel(hotel: HotelRequest, db: Session = Depends(get_db)):
-    novo_hotel = Hotel(**hotel.dict())
+    novo_hotel = Hotel(
+        nome=hotel.nome,
+        localizacao=hotel.localizacao,
+        salas_disponiveis=hotel.salas_disponiveis,
+        valor_dia=hotel.valor_dia
+    )
     db.add(novo_hotel)
     db.commit()
     db.refresh(novo_hotel)
@@ -55,6 +41,13 @@ def criar_hotel(hotel: HotelRequest, db: Session = Depends(get_db)):
 @app.get("/hoteis", response_model=List[HotelResponse])
 def listar_hoteis(db: Session = Depends(get_db)):
     return db.query(Hotel).all()
+
+@app.get("/hoteis/{hotel_id}", response_model=HotelResponse)
+def obter_hotel_por_id(hotel_id: int, db: Session = Depends(get_db)):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(404, "Hotel não encontrado")
+    return hotel
 
 @app.get("/cep/{cep}", response_model=EnderecoResponse)
 async def buscar_cep(cep: str):
@@ -69,3 +62,4 @@ async def buscar_cep(cep: str):
             localidade=data["localidade"],
             uf=data["uf"]
         )
+    

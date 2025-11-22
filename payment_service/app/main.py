@@ -69,13 +69,13 @@ def iniciar_consumidor():
             dados = json.loads(body)
             print(f"📩 MENSAGEM RECEBIDA - Reserva: {dados['id_reserva']}")
 
-            print("⏳ Processando pagamento (aguarde 10 segundos)...")
+            print("⏳ Processando pagamento (aguarde 5 segundos)...")
             time.sleep(5)
 
             db = SessionLocal()
             pagamento = Pagamento(
                 id_reserva=dados['id_reserva'],
-                valor=dados.get('valor', 350.00),
+                valor= dados['valor_total_reserva'],
                 status="Aprovado"
             )
             db.add(pagamento)

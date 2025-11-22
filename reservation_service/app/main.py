@@ -7,30 +7,15 @@ import pika
 import json
 import os
 
+from schemas import ReservaRequest, ReservaResponse
+
 from models import Reserva, Base
 from database import SessionLocal, engine
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Reservation Service")
 
-# Schemas
-class ReservaRequest(BaseModel):
-    id_hotel: int
-    nome_usuario: str
-    email_usuario: str
-    cep: str
-    data_checkin: date
-    data_checkout: date
 
-class ReservaResponse(BaseModel):
-    id: int
-    id_hotel: int
-    nome_usuario: str
-    data_checkin: date
-    data_checkout: date
-
-    class Config:
-        from_attributes = True
 
 # Database
 def get_db():
@@ -49,12 +34,14 @@ def health_check():
 def criar_reserva(reserva: ReservaRequest, db: Session = Depends(get_db)):
     # Verifica se hotel existe
     try:
-        response = httpx.get("http://hotel-service:8000/hoteis")
-        hoteis = response.json()
-        if not any(h["id"] == reserva.id_hotel for h in hoteis):
+        response = httpx.get(f"http://hotel-service:8000/hoteis/{reserva.id_hotel}")
+        hotel = response.json()
+        if not response.status_code == 200:
             raise HTTPException(404, "Hotel não encontrado")
     except Exception:
         raise HTTPException(503, "Serviço de hotéis indisponível")
+
+    valor_total_reserva = hotel["valor_dia"] * reserva.dias_permanencia
 
     # Salva reserva
     nova_reserva = Reserva(
@@ -63,8 +50,11 @@ def criar_reserva(reserva: ReservaRequest, db: Session = Depends(get_db)):
         email_usuario=reserva.email_usuario,  
         cep=reserva.cep,
         data_checkin=reserva.data_checkin,
-        data_checkout=reserva.data_checkout
+        data_checkout=reserva.data_checkout,
+        dias_permanencia=reserva.dias_permanencia,
+        valor_total_reserva=valor_total_reserva
     )
+
     db.add(nova_reserva)
     db.commit()
     db.refresh(nova_reserva)
@@ -72,7 +62,7 @@ def criar_reserva(reserva: ReservaRequest, db: Session = Depends(get_db)):
     # Envia para fila de pagamentos
     mensagem = {
         "id_reserva": nova_reserva.id,
-        "valor": 350.00,
+        "valor_total_reserva": float(nova_reserva.valor_total_reserva),
         "nome_usuario": reserva.nome_usuario,
         "email_usuario": reserva.email_usuario, 
         "data_checkin": reserva.data_checkin.isoformat(),
