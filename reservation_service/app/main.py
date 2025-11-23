@@ -42,7 +42,7 @@ def criar_reserva(reserva: ReservaRequest, db: Session = Depends(get_db)):
         raise HTTPException(503, "Serviço de hotéis indisponível")
 
     valor_total_reserva = hotel["valor_dia"] * reserva.dias_permanencia
-
+    nome_hotel = hotel["nome"]
     # Salva reserva
     nova_reserva = Reserva(
         id_hotel=reserva.id_hotel,
@@ -53,8 +53,9 @@ def criar_reserva(reserva: ReservaRequest, db: Session = Depends(get_db)):
         data_checkout=reserva.data_checkout,
         dias_permanencia=reserva.dias_permanencia,
         valor_total_reserva=valor_total_reserva
-    )
 
+    )
+     
     db.add(nova_reserva)
     db.commit()
     db.refresh(nova_reserva)
@@ -66,7 +67,8 @@ def criar_reserva(reserva: ReservaRequest, db: Session = Depends(get_db)):
         "nome_usuario": reserva.nome_usuario,
         "email_usuario": reserva.email_usuario, 
         "data_checkin": reserva.data_checkin.isoformat(),
-        "data_checkout": reserva.data_checkout.isoformat()
+        "data_checkout": reserva.data_checkout.isoformat(),
+        "nome_hotel": nome_hotel
     }
     
     try:

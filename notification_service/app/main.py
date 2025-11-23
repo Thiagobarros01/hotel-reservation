@@ -26,6 +26,7 @@ Olá {dados['nome_usuario']},
 Reserva confirmada!
 Período: {dados['data_checkin']} até {dados['data_checkout']}
 Valor: R$ {dados['valor_total_reserva']}
+Hotel: {dados['nome_hotel']}
 
 Obrigado!
 """
