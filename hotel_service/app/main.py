@@ -49,6 +49,28 @@ def obter_hotel_por_id(hotel_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Hotel não encontrado")
     return hotel
 
+@app.delete("/hoteis/{hotel_id}")
+def deletar_hotel(hotel_id: int, db: Session = Depends(get_db)):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(404, "Hotel não encontrado")
+    db.delete(hotel)
+    db.commit()
+    return {"detail": "Hotel deletado com sucesso"}
+
+@app.put("/hoteis/{hotel_id}", response_model=HotelResponse)
+def atualizar_hotel(hotel_id: int, hotel_atualizado: HotelRequest, db: Session = Depends(get_db)):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(404, "Hotel não encontrado")
+    hotel.nome = hotel_atualizado.nome
+    hotel.localizacao = hotel_atualizado.localizacao
+    hotel.salas_disponiveis = hotel_atualizado.salas_disponiveis
+    hotel.valor_dia = hotel_atualizado.valor_dia
+    db.commit()
+    db.refresh(hotel)
+    return hotel
+
 @app.get("/cep/{cep}", response_model=EnderecoResponse)
 async def buscar_cep(cep: str):
     async with httpx.AsyncClient() as client:
