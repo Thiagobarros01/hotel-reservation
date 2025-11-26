@@ -36,10 +36,13 @@ def criar_reserva(reserva: ReservaRequest, db: Session = Depends(get_db)):
     try:
         response = httpx.get(f"http://hotel-service:8000/hoteis/{reserva.id_hotel}")
         hotel = response.json()
-        if not response.status_code == 200:
-            raise HTTPException(404, "Hotel não encontrado")
-    except Exception:
-        raise HTTPException(503, "Serviço de hotéis indisponível")
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Hotel não encontrado")
+        if response.status_code != 200:
+            raise HTTPException(status_code=503, detail="Erro ao comunicar com serviço de hotéis")
+        
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail="Erro ao comunicar com serviço de hotéis")
 
     valor_total_reserva = hotel["valor_dia"] * reserva.dias_permanencia
     nome_hotel = hotel["nome"]
